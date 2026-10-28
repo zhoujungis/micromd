@@ -1,0 +1,788 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MicroMD</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1.5' y='1.5' width='29' height='29' rx='7' fill='%232f6feb'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.1 22.4V9.9l6.4 7.1 6.4-7.1v12.5'/%3E%3Cpath d='M25.3 9.3v11.8m-2.9-2.9 2.9 2.9 2.9-2.9'/%3E%3C/g%3E%3C/svg%3E">
+<script>
+try{
+  var savedTheme = localStorage.getItem('micromd.theme');
+  var theme = savedTheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}catch(e){}
+</script>
+<style>
+:root{
+  --bg:#ffffff; --bg-soft:#f7f8fa; --bg-hover:#eef1f4; --fg:#1f2328; --fg-soft:#6a737d;
+  --border:#e2e5e9; --accent:#2f6feb; --accent-soft:#e9f0fe; --code-bg:#f4f6f8;
+  --mark:#fff3b0; --sel:#cfe2ff;
+}
+html[data-theme="dark"]{
+  --bg:#0f1216; --bg-soft:#151a21; --bg-hover:#1c232c; --fg:#e6edf3; --fg-soft:#8b949e;
+  --border:#2a323c; --accent:#5ea4ff; --accent-soft:#18273b; --code-bg:#171d25;
+  --mark:#4c4200; --sel:#233a5c;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg); overflow:hidden;
+  font:15px/1.6 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--sel)}
+header{
+  height:46px; display:flex; align-items:center; gap:8px; padding:0 10px;
+  border-bottom:1px solid var(--border); background:var(--bg-soft); user-select:none;
+}
+.brand{display:flex; align-items:center; gap:8px; font-weight:650; font-size:14px; letter-spacing:.2px}
+.brand i{width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+#fileName{
+  font-size:13px; color:var(--fg-soft); max-width:38vw; padding:2px 8px;
+  border-radius:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#fileName.dirty::after{content:"●"; color:var(--accent); font-size:10px; margin-left:6px; vertical-align:2px}
+.grow{flex:1}
+#stats{font-size:12px; color:var(--fg-soft); white-space:nowrap; font-variant-numeric:tabular-nums; padding-right:4px}
+button{
+  font:inherit; font-size:13px; color:var(--fg); background:var(--bg); cursor:pointer;
+  border:1px solid var(--border); border-radius:7px; padding:5px 11px;
+  transition:border-color .12s, color .12s, background .12s;
+}
+button:hover{border-color:var(--accent); color:var(--accent); background:var(--bg-hover)}
+button:active{transform:translateY(1px)}
+#btnTheme{width:32px; padding:5px 0; text-align:center}
+main{display:flex; height:calc(100% - 46px); min-height:0}
+#editorPane{flex:0 0 var(--split,50%); display:flex; min-width:0; background:var(--bg); border-right:1px solid var(--border)}
+#editor{
+  flex:1; width:100%; border:0; outline:0; resize:none; background:transparent; color:var(--fg);
+  padding:22px 24px 120px; tab-size:2; caret-color:var(--accent);
+  font:14px/1.8 ui-monospace,SFMono-Regular,"Cascadia Mono",Consolas,"Microsoft YaHei",monospace;
+}
+#editor::placeholder{color:var(--fg-soft); opacity:.6}
+#splitter{flex:0 0 7px; cursor:col-resize; background:transparent; position:relative}
+#splitter::after{content:""; position:absolute; inset:0 3px; border-radius:2px; transition:background .15s}
+#splitter:hover::after{background:var(--accent)}
+#previewPane{flex:1 1 auto; min-width:0; overflow:auto; background:var(--bg); overscroll-behavior:contain}
+body[data-view="preview"] #editorPane,body[data-view="preview"] #splitter{display:none}
+body[data-view="editor"] #previewPane,body[data-view="editor"] #splitter{display:none}
+body[data-view="editor"] #editorPane{flex:1 1 auto}
+body.dragging{user-select:none; cursor:col-resize}
+
+.doc{max-width:840px; margin:0 auto; padding:30px 36px 160px; font-size:15.5px; line-height:1.75; overflow-wrap:break-word}
+.doc>:first-child{margin-top:0}
+.doc h1,.doc h2,.doc h3,.doc h4,.doc h5,.doc h6{margin:1.7em 0 .65em; line-height:1.32; font-weight:650}
+.doc h1{font-size:1.85em; padding-bottom:.25em; border-bottom:1px solid var(--border)}
+.doc h2{font-size:1.42em; padding-bottom:.22em; border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.2em}
+.doc h4{font-size:1.06em}
+.doc h5,.doc h6{font-size:1em; color:var(--fg-soft)}
+.doc p{margin:0 0 1em}
+.doc a{color:var(--accent); text-decoration:none}
+.doc a:hover{text-decoration:underline}
+.doc ul,.doc ol{margin:0 0 1em; padding-left:1.7em}
+.doc li{margin:.22em 0}
+.doc li>ul,.doc li>ol{margin:.22em 0}
+.doc li.task{list-style:none; margin-left:-1.35em}
+.doc li.task input{margin:0 .55em 0 0; vertical-align:-1px; accent-color:var(--accent)}
+.doc blockquote{
+  margin:0 0 1em; padding:.2em 1em; color:var(--fg-soft);
+  border-left:3px solid var(--border); background:var(--bg-soft); border-radius:0 8px 8px 0;
+}
+.doc blockquote>:last-child{margin-bottom:.4em}
+.doc blockquote>:first-child{margin-top:.4em}
+.doc code{
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.87em;
+  background:var(--code-bg); padding:.16em .42em; border-radius:5px;
+}
+.doc pre{background:var(--code-bg); border:1px solid var(--border); border-radius:9px; padding:14px 16px; overflow:auto; margin:0 0 1em}
+.doc pre code{background:none; padding:0; font-size:.86em; line-height:1.65; white-space:pre}
+.doc hr{border:0; border-top:1px solid var(--border); margin:2.2em 0}
+.doc table{border-collapse:collapse; display:block; width:max-content; max-width:100%; overflow:auto; margin:0 0 1em; font-size:.95em}
+.doc th,.doc td{border:1px solid var(--border); padding:6px 13px}
+.doc th{background:var(--bg-soft); font-weight:600}
+.doc tbody tr:nth-child(2n){background:var(--bg-soft)}
+.doc img{max-width:100%; height:auto; border-radius:7px}
+.doc mark{background:var(--mark); color:inherit; padding:0 .22em; border-radius:3px}
+.doc kbd{font:inherit; font-size:.85em; border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; padding:.05em .4em; background:var(--bg-soft)}
+.doc .empty{color:var(--fg-soft); opacity:.7}
+
+#drop{
+  position:fixed; inset:10px; z-index:50; display:none; align-items:center; justify-content:center;
+  border:2px dashed var(--accent); border-radius:14px; background:var(--bg-soft);
+  color:var(--accent); font-size:15px; font-weight:600; pointer-events:none;
+}
+#drop.on{display:flex}
+#toast{
+  position:fixed; left:50%; bottom:30px; z-index:60; padding:8px 16px; border-radius:999px;
+  background:var(--fg); color:var(--bg); font-size:13px; opacity:0; transform:translate(-50%,14px);
+  transition:opacity .22s, transform .22s; pointer-events:none;
+}
+#toast.on{opacity:1; transform:translate(-50%,0)}
+@media (max-width:860px){
+  main{flex-direction:column}
+  #editorPane{flex:1 1 50%!important; width:100%; border-right:0; border-bottom:1px solid var(--border)}
+  #previewPane{flex:1 1 50%}
+  #splitter{display:none!important}
+  #stats{display:none}
+}
+@media print{
+  header,#editorPane,#splitter,#drop,#toast{display:none!important}
+  body{overflow:visible; background:#fff; color:#000}
+  main{display:block; height:auto}
+  #previewPane{overflow:visible}
+  .doc{max-width:none; padding:0; font-size:12pt}
+}
+</style>
+</head>
+<body data-view="split">
+<header>
+  <div class="brand"><i></i>MicroMD</div>
+  <div id="fileName">welcome.md</div>
+  <div class="grow"></div>
+  <div id="stats"></div>
+  <button id="btnOpen" title="打开 Markdown 文件 (Ctrl+O)">打开</button>
+  <button id="btnSave" title="保存 (Ctrl+S)">保存</button>
+  <button id="btnLayout" title="切换布局">分栏</button>
+  <button id="btnTheme" title="切换主题">☾</button>
+</header>
+
+<main id="main">
+  <section id="editorPane">
+    <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="在此输入 Markdown，或把 .md 文件拖进窗口…"></textarea>
+  </section>
+  <div id="splitter" title="拖动调整宽度，双击复位"></div>
+  <section id="previewPane">
+    <article id="preview" class="doc"></article>
+  </section>
+</main>
+
+<div id="drop">松开以打开 Markdown 文件</div>
+<div id="toast"></div>
+<input id="fileInput" type="file" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" hidden>
+
+<script>
+/* md:start */
+const MD = (() => {
+  const esc = (s) => String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  const safeUrl = (u) => !/^\s*(?:javascript|vbscript|data:text\/html)/i.test(String(u).trim());
+
+  const slug = (s) => {
+    const id = s.toLowerCase()
+      .replace(/<[^>]+>/g, '')
+      .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+      .trim()
+      .replace(/\s+/g, '-');
+    return id || 'section';
+  };
+
+  function emphasis(t) {
+    return t
+      .replace(/\*\*\*([^\s*][\s\S]*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/___([^\s_][\s\S]*?)___/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*([^\s*][\s\S]*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/__([^\s_][\s\S]*?)__/g, '<strong>$1</strong>')
+      .replace(/\*([^\s*][\s\S]*?)\*/g, '<em>$1</em>')
+      .replace(/(^|[^\p{L}\p{N}_])_([^\s_][\s\S]*?)_(?![\p{L}\p{N}_])/gu, '$1<em>$2</em>')
+      .replace(/~~([^\s~][\s\S]*?)~~/g, '<del>$1</del>')
+      .replace(/==([^\s=][\s\S]*?)==/g, '<mark>$1</mark>');
+  }
+
+  function inline(raw) {
+    const stash = [];
+    const put = (html) => '\u0001' + (stash.push(html) - 1) + '\u0001';
+    let t = String(raw);
+
+    t = t.replace(/(`+)([\s\S]*?)\1/g, (m, ticks, code) =>
+      put('<code>' + esc(code.replace(/^ ([\s\S]*?) $/, '$1')) + '</code>'));
+
+    t = t.replace(/<((?:https?:\/\/|mailto:)[^\s<>]+)>/g, (m, url) =>
+      put('<a href="' + esc(url) + '" target="_blank" rel="noreferrer noopener">' + esc(url) + '</a>'));
+
+    t = t.replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, (m, ch) => put(esc(ch)));
+
+    t = esc(t);
+
+    t = t.replace(/!\[([^\]]*)\]\(\s*([^\s)]+)\s*(?:(?:&quot;|')([^)]*?)(?:&quot;|'))?\s*\)/g, (m, alt, src, title) => {
+      if (!safeUrl(src)) return put(esc(m));
+      return put('<img src="' + src + '" alt="' + alt + '"' + (title ? ' title="' + title + '"' : '') + ' loading="lazy">');
+    });
+
+    t = t.replace(/\[([^\]]*)\]\(\s*([^\s)]+)\s*(?:(?:&quot;|')([^)]*?)(?:&quot;|'))?\s*\)/g, (m, label, href, title) => {
+      if (!safeUrl(href)) return put(esc(m));
+      const ext = href.charAt(0) === '#' ? '' : ' target="_blank" rel="noreferrer noopener"';
+      return put('<a href="' + href + '"' + (title ? ' title="' + title + '"' : '') + ext + '>' + emphasis(label) + '</a>');
+    });
+
+    t = t.replace(/(^|[\s(])(https?:\/\/[^\s<()]+)/g, (m, pre, url) => {
+      const trimmed = url.replace(/[.,;:!?]+$/, '');
+      const trail = url.slice(trimmed.length);
+      return pre + put('<a href="' + trimmed + '" target="_blank" rel="noreferrer noopener">' + trimmed + '</a>') + trail;
+    });
+
+    t = emphasis(t);
+
+    return t.replace(/\u0001(\d+)\u0001/g, (m, i) => stash[+i]);
+  }
+
+  const isBlank = (l) => !String(l).trim();
+  const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^`~]*)$/;
+  const HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
+  const HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+  const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])[ \t]+(.*)$/;
+  const QUOTE = /^ {0,3}> ?/;
+  const TABLE_SEP = /^(?:[ \t]*\|[ \t]*:?-+:?[ \t]*\|[ \t]*|[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?)[ \t]*$/;
+
+  function startsBlock(lines, i) {
+    const l = lines[i];
+    return FENCE.test(l) || HEADING.test(l) || HR.test(l) || QUOTE.test(l) || ITEM.test(l) ||
+      (l.indexOf('|') !== -1 && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]));
+  }
+
+  function table(lines, start) {
+    const cells = (row) => row.trim()
+      .replace(/^\|/, '').replace(/\|$/, '')
+      .split(/(?<!\\)\|/)
+      .map((c) => c.trim().replace(/\\\|/g, '|'));
+
+    const head = cells(lines[start]);
+    const aligns = cells(lines[start + 1]).map((c) => {
+      const l = c.charAt(0) === ':';
+      const r = c.charAt(c.length - 1) === ':';
+      return l && r ? 'center' : r ? 'right' : l ? 'left' : '';
+    });
+
+    let i = start + 2;
+    const rows = [];
+    while (i < lines.length && !isBlank(lines[i]) && lines[i].indexOf('|') !== -1 && !startsBlock(lines, i)) {
+      rows.push(cells(lines[i]));
+      i += 1;
+    }
+
+    const cell = (tag, text, idx) => {
+      const align = aligns[idx] ? ' style="text-align:' + aligns[idx] + '"' : '';
+      return '<' + tag + align + '>' + (text ? inline(text) : '') + '</' + tag + '>';
+    };
+
+    const thead = '<thead><tr>' + head.map((c, k) => cell('th', c, k)).join('') + '</tr></thead>';
+    const tbody = rows.length
+      ? '<tbody>' + rows.map((r) => '<tr>' + head.map((_, k) => cell('td', r[k], k)).join('') + '</tr>').join('') + '</tbody>'
+      : '';
+    return { html: '<table>' + thead + tbody + '</table>', i };
+  }
+
+  function itemBody(text) {
+    const html = blocks(text).trim();
+    if (html.slice(0, 3) !== '<p>') return html;
+    const end = html.indexOf('</p>');
+    if (end === -1) return html;
+    return html.slice(3, end) + html.slice(end + 4).replace(/^\n/, '');
+  }
+
+  function list(lines, start) {
+    const first = lines[start].match(ITEM);
+    const baseIndent = first[1].length;
+    const ordered = /^\d/.test(first[2]);
+    const startAt = ordered ? parseInt(first[2], 10) : 1;
+    const items = [{ lines: [first[3]] }];
+    const strip = new RegExp('^ {0,' + (baseIndent + 4) + '}');
+    let i = start + 1;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      if (isBlank(line)) {
+        let j = i + 1;
+        while (j < lines.length && isBlank(lines[j])) j += 1;
+        if (j >= lines.length) break;
+        const next = lines[j].match(ITEM);
+        if ((next && next[1].length >= baseIndent) || /^\s{2,}\S/.test(lines[j])) {
+          items[items.length - 1].lines.push('');
+          i = j;
+          continue;
+        }
+        break;
+      }
+      const m = line.match(ITEM);
+      if (m && m[1].length <= baseIndent + 1) {
+        if (m[1].length < baseIndent) break;
+        items.push({ lines: [m[3]] });
+        i += 1;
+        continue;
+      }
+      if (!m && !/^\s/.test(line)) break;
+      items[items.length - 1].lines.push(line.replace(strip, ''));
+      i += 1;
+    }
+
+    const tag = ordered ? 'ol' : 'ul';
+    const body = items.map((it) => {
+      const text = it.lines.join('\n');
+      const task = text.match(/^\[([ xX])\][ \t]+([\s\S]*)$/);
+      if (task) {
+        const on = task[1].toLowerCase() === 'x';
+        return '<li class="task"><input type="checkbox" disabled' + (on ? ' checked' : '') + '><span>' + itemBody(task[2]) + '</span></li>';
+      }
+      return '<li>' + itemBody(text) + '</li>';
+    }).join('');
+
+    return {
+      html: '<' + tag + (ordered && startAt !== 1 ? ' start="' + startAt + '"' : '') + '>' + body + '</' + tag + '>',
+      i
+    };
+  }
+
+  function blocks(src) {
+    const lines = String(src).replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split('\n');
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      if (isBlank(line)) { i += 1; continue; }
+      let m;
+
+      if ((m = line.match(FENCE))) {
+        const fence = m[1];
+        const lang = (m[2] || '').trim().split(/\s+/)[0];
+        const buf = [];
+        i += 1;
+        while (i < lines.length) {
+          const close = lines[i].match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+          if (close && close[1].charAt(0) === fence.charAt(0) && close[1].length >= fence.length) { i += 1; break; }
+          buf.push(lines[i]);
+          i += 1;
+        }
+        out.push('<pre><code' + (lang ? ' class="language-' + esc(lang) + '"' : '') + '>' + esc(buf.join('\n')) + '</code></pre>');
+        continue;
+      }
+
+      if (HR.test(line)) { out.push('<hr>'); i += 1; continue; }
+
+      if ((m = line.match(HEADING))) {
+        const lv = m[1].length;
+        out.push('<h' + lv + ' id="' + slug(m[2].replace(/[*_`~]/g, '')) + '">' + inline(m[2]) + '</h' + lv + '>');
+        i += 1;
+        continue;
+      }
+
+      if (QUOTE.test(line)) {
+        const buf = [];
+        while (i < lines.length && QUOTE.test(lines[i])) {
+          buf.push(lines[i].replace(QUOTE, ''));
+          i += 1;
+        }
+        out.push('<blockquote>' + blocks(buf.join('\n')) + '</blockquote>');
+        continue;
+      }
+
+      if (line.indexOf('|') !== -1 && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1])) {
+        const r = table(lines, i);
+        out.push(r.html);
+        i = r.i;
+        continue;
+      }
+
+      if (ITEM.test(line)) {
+        const r = list(lines, i);
+        out.push(r.html);
+        i = r.i;
+        continue;
+      }
+
+      const buf = [];
+      while (i < lines.length && !isBlank(lines[i]) && !(buf.length && startsBlock(lines, i))) {
+        buf.push(lines[i]);
+        i += 1;
+      }
+      if (!buf.length) { buf.push(lines[i]); i += 1; }
+      out.push('<p>' + buf.map(inline).join('<br>') + '</p>');
+    }
+
+    return out.join('\n');
+  }
+
+  return { render: blocks };
+})();
+/* md:end */
+
+const WELCOME = [
+  '# MicroMD',
+  '',
+  '一个单文件、零依赖的 Markdown 阅读器。把 `.md` 文件拖进窗口，或按 `Ctrl+O` 打开。',
+  '',
+  '## 快捷键',
+  '',
+  '| 快捷键 | 功能 |',
+  '| --- | --- |',
+  '| `Ctrl+O` | 打开文件 |',
+  '| `Ctrl+S` | 保存（先"打开"过文件则可直接写回） |',
+  '| `Ctrl+B` / `Ctrl+I` | 粗体 / 斜体 |',
+  '| `Ctrl+K` | 插入链接 |',
+  '',
+  '## 已支持',
+  '',
+  '- 标题、**粗体**、*斜体*、~~删除线~~、==高亮==、`行内代码`',
+  '- 代码块、引用、表格、任务列表',
+  '- [链接](https://commonmark.org) 与自动链接 https://example.com',
+  '',
+  '> 左边写，右边看，所有渲染都在本地完成，不联网。',
+  '',
+  '- [x] 打开一个文件',
+  '- [x] 试试拖动分隔条',
+  '- [ ] 开始写点什么'
+].join('\n');
+
+const $ = (sel) => document.querySelector(sel);
+const main = $('#main');
+const editor = $('#editor');
+const preview = $('#preview');
+const previewPane = $('#previewPane');
+const nameEl = $('#fileName');
+const statsEl = $('#stats');
+const dropEl = $('#drop');
+const toastEl = $('#toast');
+const fileInput = $('#fileInput');
+const btnLayout = $('#btnLayout');
+const btnTheme = $('#btnTheme');
+
+const store = {
+  get(key, fallback) {
+    try {
+      const v = localStorage.getItem('micromd.' + key);
+      return v === null ? fallback : v;
+    } catch (e) {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try { localStorage.setItem('micromd.' + key, value); } catch (e) {}
+  }
+};
+
+const app = { handle: null, saved: '', name: 'welcome.md', native: false };
+
+const BIG_DOC = 200000;
+const MAX_DRAFT = 1000000;
+
+let renderFrame = 0;
+let draftTimer = 0;
+
+function render() {
+  preview.innerHTML = MD.render(editor.value);
+  updateStats();
+}
+
+function scheduleRender() {
+  if (renderFrame) return;
+  if (editor.value.length > BIG_DOC) {
+    renderFrame = setTimeout(() => {
+      renderFrame = 0;
+      render();
+    }, 150);
+    return;
+  }
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = 0;
+    render();
+  });
+}
+
+function updateStats() {
+  const text = editor.value;
+  const cjk = (text.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+  const words = (text.replace(/[\u3400-\u9fff\uf900-\ufaff]/g, ' ').match(/[\p{L}\p{N}_]+/gu) || []).length;
+  const minutes = Math.max(1, Math.round((cjk + words * 1.7) / 350));
+  statsEl.textContent = cjk + words + ' 字 · 约 ' + minutes + ' 分钟';
+}
+
+function markDirty() {
+  nameEl.classList.toggle('dirty', editor.value !== app.saved);
+}
+
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    store.set('draft', editor.value);
+    store.set('name', app.name);
+  }, 400);
+}
+
+function toast(message) {
+  toastEl.textContent = message;
+  toastEl.classList.add('on');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toastEl.classList.remove('on'), 1600);
+}
+
+function setDocument(file, handle) {
+  return file.text().then((text) => {
+    app.handle = handle || null;
+    app.native = false;
+    app.name = file.name;
+    app.saved = text;
+    editor.value = text;
+    nameEl.textContent = file.name;
+    document.title = file.name + ' · MicroMD';
+    markDirty();
+    render();
+    saveDraft();
+    editor.focus();
+  });
+}
+
+async function openDialog() {
+  if (window.showOpenFilePicker) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{
+          description: 'Markdown',
+          accept: {
+            'text/markdown': ['.md', '.markdown', '.mdown', '.mkd'],
+            'text/plain': ['.txt']
+          }
+        }]
+      });
+      if (handles && handles[0]) await setDocument(await handles[0].getFile(), handles[0]);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  fileInput.click();
+}
+
+async function saveFile() {
+  const content = editor.value;
+  if (app.native && typeof window.micromdSave === 'function') {
+    try {
+      await window.micromdSave(content);
+      app.saved = content;
+      markDirty();
+      toast('已保存到 ' + app.name);
+    } catch (err) {
+      toast('保存失败：' + ((err && err.message) || err));
+    }
+    return;
+  }
+  if (app.handle && app.handle.createWritable) {
+    try {
+      const writable = await app.handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      app.saved = content;
+      markDirty();
+      toast('已保存到 ' + app.handle.name);
+      return;
+    } catch (err) {}
+  }
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = app.name || 'untitled.md';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+  app.saved = content;
+  markDirty();
+  toast('已导出 ' + link.download);
+}
+
+function insertText(text) {
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  editor.setRangeText(text, start, end, 'end');
+  editor.dispatchEvent(new Event('input'));
+}
+
+function wrapSelection(before, after) {
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const selected = editor.value.slice(start, end);
+  const tail = after === undefined ? before : after;
+  editor.setRangeText(before + selected + tail, start, end, 'end');
+  editor.selectionStart = start + before.length;
+  editor.selectionEnd = start + before.length + selected.length;
+  editor.dispatchEvent(new Event('input'));
+}
+
+function setView(view, persist) {
+  const modes = ['split', 'preview', 'editor'];
+  const next = modes.indexOf(view) === -1 ? 'split' : view;
+  document.body.dataset.view = next;
+  btnLayout.textContent = next === 'split' ? '分栏' : next === 'preview' ? '预览' : '编辑';
+  btnLayout.title = '切换布局（当前：' + btnLayout.textContent + '）';
+  if (persist !== false) store.set('view', next);
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+  btnTheme.textContent = theme === 'dark' ? '☀' : '☾';
+  btnTheme.title = theme === 'dark' ? '切换到亮色' : '切换到暗色';
+}
+
+let syncing = false;
+function syncScroll(from, to) {
+  if (syncing) return;
+  const fromMax = from.scrollHeight - from.clientHeight;
+  const toMax = to.scrollHeight - to.clientHeight;
+  if (fromMax <= 0 || toMax <= 0) return;
+  syncing = true;
+  to.scrollTop = (from.scrollTop / fromMax) * toMax;
+  requestAnimationFrame(() => { syncing = false; });
+}
+
+editor.addEventListener('input', () => {
+  scheduleRender();
+  markDirty();
+  saveDraft();
+});
+
+editor.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    insertText('  ');
+  }
+});
+
+editor.addEventListener('scroll', () => syncScroll(editor, previewPane));
+previewPane.addEventListener('scroll', () => syncScroll(previewPane, editor));
+
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (key === 's') { e.preventDefault(); saveFile(); }
+  else if (key === 'o') { e.preventDefault(); openDialog(); }
+  else if (key === 'b') { e.preventDefault(); wrapSelection('**'); }
+  else if (key === 'i') { e.preventDefault(); wrapSelection('*'); }
+  else if (key === 'k') { e.preventDefault(); wrapSelection('[', '](url)'); }
+});
+
+$('#btnOpen').addEventListener('click', openDialog);
+$('#btnSave').addEventListener('click', saveFile);
+btnTheme.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  store.set('theme', next);
+});
+btnLayout.addEventListener('click', () => {
+  const current = document.body.dataset.view || 'split';
+  const next = current === 'split' ? 'preview' : current === 'preview' ? 'editor' : 'split';
+  setView(next);
+});
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (file) setDocument(file, null);
+  fileInput.value = '';
+});
+
+const splitter = $('#splitter');
+splitter.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  try { splitter.setPointerCapture(e.pointerId); } catch (err) {}
+  document.body.classList.add('dragging');
+  const rect = main.getBoundingClientRect();
+  const move = (ev) => {
+    const pct = Math.min(80, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
+    main.style.setProperty('--split', pct + '%');
+    store.set('split', pct.toFixed(1));
+  };
+  const up = () => {
+    splitter.removeEventListener('pointermove', move);
+    splitter.removeEventListener('pointerup', up);
+    splitter.removeEventListener('pointercancel', up);
+    document.body.classList.remove('dragging');
+  };
+  splitter.addEventListener('pointermove', move);
+  splitter.addEventListener('pointerup', up);
+  splitter.addEventListener('pointercancel', up);
+});
+splitter.addEventListener('dblclick', () => {
+  main.style.setProperty('--split', '50%');
+  store.set('split', '50.0');
+});
+
+const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') !== -1;
+let dragDepth = 0;
+
+window.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth += 1;
+  dropEl.classList.add('on');
+});
+window.addEventListener('dragover', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) dropEl.classList.remove('on');
+});
+window.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  dropEl.classList.remove('on');
+  const files = Array.from(e.dataTransfer.files || []);
+  const file = files.find((f) => /\.(md|markdown|mdown|mkd|txt)$/i.test(f.name)) || files[0];
+  if (file) setDocument(file, null);
+});
+
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+  if (!store.get('theme', '')) applyTheme(e.matches ? 'dark' : 'light');
+});
+
+document.addEventListener('click', (e) => {
+  const link = e.target instanceof Element ? e.target.closest('a[href]') : null;
+  if (!link || typeof window.micromdOpenExternal !== 'function') return;
+  const href = link.getAttribute('href') || '';
+  if (!/^(https?:|mailto:)/i.test(href)) return;
+  e.preventDefault();
+  window.micromdOpenExternal(href);
+});
+
+(async function boot() {
+  applyTheme(document.documentElement.dataset.theme || 'light');
+  setView(store.get('view', 'split'), false);
+
+  const split = parseFloat(store.get('split', '50'));
+  if (split >= 20 && split <= 80) main.style.setProperty('--split', split + '%');
+
+  let nativeDoc = null;
+  if (typeof window.micromdLoad === 'function') {
+    try {
+      const payload = await window.micromdLoad();
+      if (payload) nativeDoc = JSON.parse(payload);
+    } catch (err) {}
+  }
+
+  const draft = store.get('draft', '');
+  if (nativeDoc && typeof nativeDoc.content === 'string') {
+    editor.value = nativeDoc.content;
+    app.name = nativeDoc.name || 'untitled.md';
+    app.native = true;
+  } else if (draft) {
+    editor.value = draft;
+    app.name = store.get('name', 'untitled.md');
+  } else {
+    editor.value = WELCOME;
+    app.name = 'welcome.md';
+  }
+  app.saved = editor.value;
+  nameEl.textContent = app.name;
+  document.title = app.name + ' · MicroMD';
+  render();
+  markDirty();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，例如 v0.2.0（留空则自动生成 v0.0.<run_number>）"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build for Windows
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        id: meta
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($v)) {
+            if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+              $v = "v0.0.${{ github.run_number }}"
+            } else {
+              $v = "${{ github.ref_name }}"
+            }
+          }
+          if ($v -notmatch '^v') { $v = "v$v" }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "release version: $v"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Install go-winres
+        run: go install github.com/tc-hib/go-winres@latest
+
+      - name: Generate Windows resources
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}".TrimStart("v")
+          $winres = Join-Path (go env GOPATH) "bin\go-winres.exe"
+          & $winres simply --arch amd64 --manifest gui --icon assets/icon.ico `
+            --product-name "MicroMD" `
+            --file-description "MicroMD Markdown Viewer" `
+            --file-version $version `
+            --product-version $version `
+            --copyright "Copyright (c) MicroMD"
+          if (-not (Test-Path "rsrc_windows_amd64.syso")) { throw "go-winres did not produce rsrc_windows_amd64.syso" }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $out = "dist/MicroMD-${{ steps.meta.outputs.version }}-win-x64.exe"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -trimpath -buildvcs=false -ldflags "-H windowsgui -s -w" -o $out .
+          Get-Item $out | Format-List Name, Length
+          (Get-FileHash $out -Algorithm SHA256).Hash + "  $(Split-Path $out -Leaf)" |
+            Out-File -FilePath "$out.sha256" -Encoding utf8
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: micromd-win-x64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: micromd-win-x64
+          path: dist
+
+      - name: Update tag
+        env:
+          TAG: ${{ needs.build.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG" -m "MicroMD $TAG"
+          git push --force origin "refs/tags/$TAG"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "MicroMD $TAG" --latest
+          else
+            gh release create "$TAG" dist/* --title "MicroMD $TAG" --generate-notes --latest
+          fi

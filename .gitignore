@@ -1,0 +1,16 @@
+# build output
+/dist/
+/MicroMD.exe
+*.exe
+
+# generated Windows resources
+*.syso
+
+# local tooling
+/.commandcode/
+
+# editor / os
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
